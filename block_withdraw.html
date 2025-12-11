@@ -1,0 +1,137 @@
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Balance Update</title>
+<link rel="stylesheet" href="style.css">
+
+<script type="module" src="./config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<div class="main-content">
+    <div class="container">
+        <div class="page-header">
+            <h1>Balance Update</h1>
+        </div>
+
+        <div class="balance-card">
+            <h2>Deduct Channel Balance</h2>
+            
+            <div class="form-group">
+                <select id="channelSelect">
+                    <option value="">Select Channel</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <input id="amount" type="number" placeholder="Enter Amount to Deduct">
+            </div>
+
+            <button id="updateBtn" style="width:100%">Update Balance</button>
+
+            <div class="info-box">
+                <p>This action will deduct the specified amount from the selected channel's balance and create a withdrawal record with "Accept" status.</p>
+            </div>
+        </div>
+
+        <div id="loader"></div>
+    </div>
+</div>
+
+<script type="module">
+import { db } from "./config.js"
+import { collection, getDocs, getDoc, updateDoc, addDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js"
+
+const channelSelect = document.getElementById("channelSelect")
+const amountInput = document.getElementById("amount")
+const updateBtn = document.getElementById("updateBtn")
+const loader = document.getElementById("loader")
+
+async function loadChannels(){
+    loader.style.display = "block"
+    const snap = await getDocs(collection(db,"channel"))
+    snap.forEach(d=>{
+        const op = document.createElement("option")
+        op.value = d.id
+        op.textContent = d.data().name
+        channelSelect.appendChild(op)
+    })
+    loader.style.display = "none"
+}
+
+updateBtn.onclick = async () => {
+    const channelID = channelSelect.value
+    const amt = Number(amountInput.value)
+
+    if(!channelID || !amt){
+        Swal.fire({
+            icon: 'error',
+            title: 'Missing Information',
+            text: 'Please select a channel and enter amount'
+        })
+        return
+    }
+
+    if(amt <= 0){
+        Swal.fire({
+            icon: 'error',
+            title: 'Invalid Amount',
+            text: 'Amount must be greater than 0'
+        })
+        return
+    }
+
+    loader.style.display = "block"
+
+    const ref = doc(db,"channel",channelID)
+    const snap = await getDoc(ref)
+    const bal = Number(snap.data().balance || 0)
+
+    if(amt > bal){
+        loader.style.display = "none"
+        Swal.fire({
+            icon: 'error',
+            title: 'Insufficient Balance',
+            text: `Available balance: ₹${bal}`
+        })
+        return
+    }
+
+    const result = await Swal.fire({
+        title: 'Confirm Balance Deduction',
+        html: `Deduct <b>₹${amt}</b> from channel balance?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, Deduct',
+        cancelButtonText: 'Cancel'
+    })
+
+    if(!result.isConfirmed){
+        loader.style.display = "none"
+        return
+    }
+
+    await updateDoc(ref,{ balance: bal - amt })
+
+    await addDoc(collection(db,"withdraw"),{
+        user_id: channelID,
+        mode: "manual",
+        amount: amt,
+        status: "Accept",
+        timestamp: serverTimestamp()
+    })
+
+    loader.style.display = "none"
+    
+    Swal.fire({
+        icon: 'success',
+        title: 'Balance Updated',
+        text: `New balance: ₹${bal - amt}`
+    })
+
+    channelSelect.value = ""
+    amountInput.value = ""
+}
+
+loadChannels()
+</script>
+<script src="auth.js"></script>
+<script src="sidebar.js"></script>

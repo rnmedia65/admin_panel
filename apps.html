@@ -1,0 +1,124 @@
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Apps</title>
+<link rel="stylesheet" href="style.css">
+
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script type="module" src="./config.js"></script>
+
+<div class="main-content">
+    <div class="container">
+        <div class="page-header">
+            <h1>App Management</h1>
+        </div>
+
+        <div class="card">
+            <div class="form-group">
+                <input type="file" id="appImage">
+            </div>
+            <div class="form-group">
+                <input id="title" type="text" placeholder="Enter Title">
+            </div>
+            <div class="form-group">
+                <input id="revenue" type="text" placeholder="Enter Revenue">
+            </div>
+            <button id="addBtn">Add App</button>
+        </div>
+
+        <div id="loader"></div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Image</th>
+                    <th>Title</th>
+                    <th>Revenue</th>
+                    <th>Delete</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<script type="module">
+    import { db, IMGBB_API } from "./config.js"
+    import { collection, addDoc, getDocs, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js"
+
+    const tBody = document.getElementById("tableBody")
+    const loader = document.getElementById("loader")
+
+    async function loadData() {
+        tBody.innerHTML = ""
+        const snap = await getDocs(collection(db, "apps"))
+        snap.forEach(d => {
+            const x = d.data()
+            const tr = document.createElement("tr")
+            tr.innerHTML = `
+        <td><img src="${x.image}" width="50"></td>
+        <td>${x.title}</td>
+        <td>${x.revenue}</td>
+        <td><button class="delBtn btn-danger" data-id="${d.id}">Delete</button></td>
+        `
+            tBody.appendChild(tr)
+        })
+        document.querySelectorAll(".delBtn").forEach(btn => {
+            btn.onclick = () => {
+                Swal.fire({
+                    title: "Are you sure?",
+                    icon: "warning",
+                    showCancelButton: true,
+                    confirmButtonText: "Yes"
+                }).then(async r => {
+                    if (r.isConfirmed) {
+                        await deleteDoc(doc(db, "apps", btn.dataset.id))
+                        Swal.fire("Deleted", "", "success")
+                        loadData()
+                    }
+                })
+            }
+        })
+    }
+
+    document.getElementById("addBtn").onclick = async () => {
+        const title = document.getElementById("title").value
+        const revenue = document.getElementById("revenue").value
+        const file = document.getElementById("appImage").files[0]
+
+        if (!title || !revenue || !file) {
+            Swal.fire("Please fill all fields")
+            return
+        }
+
+        loader.style.display = "block"
+
+        const f = new FormData()
+        f.append("image", file)
+
+        const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API}`, {
+            method: "POST",
+            body: f
+        })
+        const img = await res.json()
+        const url = img.data.url
+
+        await addDoc(collection(db, "apps"), {
+            title,
+            revenue,
+            image: url
+        })
+
+        loader.style.display = "none"
+        Swal.fire("App Added", "", "success")
+
+        document.getElementById("title").value = ""
+        document.getElementById("revenue").value = ""
+        document.getElementById("appImage").value = ""
+
+        loadData()
+    }
+
+    loadData()
+</script>
+<script src="auth.js"></script>
+<script src="sidebar.js"></script>

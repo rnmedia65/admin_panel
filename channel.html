@@ -1,0 +1,135 @@
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Channels</title>
+<link rel="stylesheet" href="style.css">
+
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script type="module" src="./config.js"></script>
+
+<div class="main-content">
+    <div class="container">
+        <div class="page-header">
+            <h1>Channel Management</h1>
+        </div>
+
+        <div class="card">
+            <div class="form-group">
+                <input id="name" type="text" placeholder="Enter Name">
+            </div>
+            <div class="form-group">
+                <input type="file" id="logo">
+            </div>
+            <div class="form-group">
+                <input id="username" type="text" placeholder="Enter Username">
+            </div>
+            <div class="form-group">
+                <input type="password" id="password" placeholder="Enter Password">
+            </div>
+            <button id="addBtn">Add Channel</button>
+        </div>
+
+        <div id="loader"></div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Logo</th>
+                    <th>Username</th>
+                    <th>Password</th>
+                    <th>Balance</th>
+                    <th>Delete</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<script type="module">
+    import { db, IMGBB_API } from "./config.js"
+    import { collection, addDoc, getDocs, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js"
+
+    const tBody = document.getElementById("tableBody")
+    const loader = document.getElementById("loader")
+
+    async function loadData() {
+        tBody.innerHTML = ""
+        const snap = await getDocs(collection(db, "channel"))
+        snap.forEach(d => {
+            const x = d.data()
+            const tr = document.createElement("tr")
+            tr.innerHTML = `
+        <td>${x.name}</td>
+        <td><img src="${x.logo}" width="50"></td>
+        <td>${x.username}</td>
+        <td>${x.password}</td>
+        <td>${x.balance}</td>
+        <td><button class="delBtn btn-danger" data-id="${d.id}">Delete</button></td>
+        `
+            tBody.appendChild(tr)
+        })
+        document.querySelectorAll(".delBtn").forEach(btn => {
+            btn.onclick = () => {
+                Swal.fire({
+                    title: "Are you sure?",
+                    icon: "warning",
+                    showCancelButton: true,
+                    confirmButtonText: "Yes"
+                }).then(async r => {
+                    if (r.isConfirmed) {
+                        await deleteDoc(doc(db, "channel", btn.dataset.id))
+                        Swal.fire("Deleted", "", "success")
+                        loadData()
+                    }
+                })
+            }
+        })
+    }
+
+    document.getElementById("addBtn").onclick = async () => {
+        const name = document.getElementById("name").value
+        const username = document.getElementById("username").value
+        const password = document.getElementById("password").value
+        const file = document.getElementById("logo").files[0]
+
+        if (!name || !username || !password || !file) {
+            Swal.fire("Please fill all fields")
+            return
+        }
+
+        loader.style.display = "block"
+
+        const f = new FormData()
+        f.append("image", file)
+
+        const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API}`, {
+            method: "POST",
+            body: f
+        })
+        const img = await res.json()
+        const url = img.data.url
+
+        await addDoc(collection(db, "channel"), {
+            name,
+            username,
+            password,
+            logo: url,
+            balance: 0
+        })
+
+        loader.style.display = "none"
+        Swal.fire("Channel Added", "", "success")
+
+        document.getElementById("name").value = ""
+        document.getElementById("username").value = ""
+        document.getElementById("password").value = ""
+        document.getElementById("logo").value = ""
+
+        loadData()
+    }
+
+    loadData()
+</script>
+<script src="auth.js"></script>
+<script src="sidebar.js"></script>

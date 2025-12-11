@@ -1,0 +1,123 @@
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Withdrawal History</title>
+<link rel="stylesheet" href="style.css">
+
+<script type="module" src="./config.js"></script>
+
+<div class="main-content">
+    <div class="container">
+        <div class="page-header">
+            <h1>Withdrawal History</h1>
+        </div>
+
+        <div class="filter-section">
+            <input type="date" id="fromDate">
+            <input type="date" id="toDate">
+            <select id="channelSelect">
+                <option value="all">All Channels</option>
+            </select>
+            <button id="filterBtn">Filter</button>
+        </div>
+
+        <div id="loader"></div>
+
+        <div id="cards" class="cards-grid"></div>
+
+        <div id="nodata" class="empty-state" style="display:none;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            <p>No withdrawal records found</p>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+import { db } from "./config.js"
+import { collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js"
+
+const cards = document.getElementById("cards")
+const loader = document.getElementById("loader")
+const fromDate = document.getElementById("fromDate")
+const toDate = document.getElementById("toDate")
+const channelSelect = document.getElementById("channelSelect")
+const nodata = document.getElementById("nodata")
+
+async function loadChannels(){
+    loader.style.display = "block"
+    const snap = await getDocs(collection(db,"channel"))
+    snap.forEach(d=>{
+        const op = document.createElement("option")
+        op.value = d.id
+        op.innerText = d.data().name
+        channelSelect.appendChild(op)
+    })
+    loader.style.display = "none"
+}
+
+function format(ts){
+    if(!ts) return ""
+    const d = new Date(ts.seconds * 1000)
+    return d.toISOString().split("T")[0]
+}
+
+async function loadData(){
+    loader.style.display = "block"
+    cards.innerHTML = ""
+    nodata.style.display = "none"
+
+    const snap = await getDocs(collection(db,"withdraw"))
+    const chSnap = await getDocs(collection(db,"channel"))
+
+    const names = {}
+    chSnap.forEach(c => names[c.id] = c.data().name)
+
+    let found = false
+
+    snap.forEach(d=>{
+        const x = d.data()
+        const date = format(x.timestamp)
+
+        if(fromDate.value && date < fromDate.value) return
+        if(toDate.value && date > toDate.value) return
+        if(channelSelect.value !== "all" && x.user_id !== channelSelect.value) return
+
+        found = true
+
+        const div = document.createElement("div")
+        div.className = "card"
+
+        const statusClass = x.status === "Accept" ? "btn-success" : x.status === "Reject" ? "btn-danger" : "btn-secondary"
+
+        div.innerHTML = `
+        <p><b>Channel:</b> ${names[x.user_id] || "N/A"}</p>
+        <p><b>Mode:</b> ${x.mode}</p>
+        <p><b>Amount:</b> ₹${x.amount}</p>
+        <p><b>Status:</b> <button class="${statusClass}" style="padding:6px 12px;font-size:12px;cursor:default">${x.status}</button></p>
+        ${x.mode === "upi" ? `<p><b>UPI:</b> ${x.upi}</p>` : ""}
+        ${x.mode === "bank" ? `
+        <p><b>Bank:</b> ${x.bankName}</p>
+        <p><b>Account:</b> ${x.accNum}</p>
+        <p><b>IFSC:</b> ${x.ifsc}</p>` : ""}
+        <p><b>Date:</b> ${date}</p>
+        `
+        cards.appendChild(div)
+    })
+
+    if(!found){
+        nodata.style.display = "block"
+    }
+
+    loader.style.display = "none"
+}
+
+document.getElementById("filterBtn").onclick = loadData
+
+loadChannels()
+loadData()
+</script>
+<script src="auth.js"></script>
+<script src="sidebar.js"></script>

@@ -1,0 +1,160 @@
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Data Entry</title>
+<link rel="stylesheet" href="style.css">
+
+<script type="module" src="./config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<div class="main-content">
+    <div class="container">
+        <div class="page-header">
+            <h1>Data Entry</h1>
+        </div>
+
+        <div id="loader"></div>
+
+        <div class="card">
+            <div class="form-group">
+                <select id="channelSelect">
+                    <option value="">Select Channel</option>
+                </select>
+            </div>
+
+            <div id="inputDiv" style="display:none;">
+                <div class="form-group">
+                    <input id="conversion" type="text" placeholder="Enter Conversion">
+                </div>
+                <div class="form-group">
+                    <input id="clicks" type="text" placeholder="Enter Clicks">
+                </div>
+                <div class="form-group">
+                    <select id="appSelect">
+                        <option value="">Select App</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <input id="revenue" type="text" disabled placeholder="Revenue">
+                </div>
+                <button id="addBtn">Add Data</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+import { db } from "./config.js"
+import { collection, getDocs, addDoc, doc, getDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js"
+
+const loader = document.getElementById("loader")
+const channelSelect = document.getElementById("channelSelect")
+const appSelect = document.getElementById("appSelect")
+const revenueInput = document.getElementById("revenue")
+const conversionInput = document.getElementById("conversion")
+const inputDiv = document.getElementById("inputDiv")
+
+let selectedRevenueRate = 0
+
+async function creditDaily(){
+    const today = new Date().toISOString().split("T")[0]
+    const snap = await getDocs(collection(db,"data"))
+    for(const d of snap.docs){
+        const x = d.data()
+        if(!x.credit_tomorrow) continue
+        if(x.credited) continue
+        const ts = new Date(x.timestamp.seconds * 1000)
+        const dataDate = ts.toISOString().split("T")[0]
+        if(dataDate === today) continue
+        const ref = doc(db,"channel",x.channel_id)
+        const c = await getDoc(ref)
+        const bal = Number(c.data().balance || 0)
+        await updateDoc(ref,{ balance: bal + Number(x.revenue) })
+        await updateDoc(doc(db,"data",d.id),{ credited:true })
+    }
+}
+
+async function loadChannels(){
+    loader.style.display = "block"
+    const snap = await getDocs(collection(db,"channel"))
+    snap.forEach(d=>{
+        const x = d.data()
+        const op = document.createElement("option")
+        op.value = d.id
+        op.textContent = x.name
+        channelSelect.appendChild(op)
+    })
+    loader.style.display = "none"
+}
+
+async function loadApps(){
+    loader.style.display = "block"
+    const snap = await getDocs(collection(db,"apps"))
+    snap.forEach(d=>{
+        const x = d.data()
+        const op = document.createElement("option")
+        op.value = d.id
+        op.textContent = x.title
+        op.dataset.revenue = x.revenue
+        appSelect.appendChild(op)
+    })
+    loader.style.display = "none"
+}
+
+function calculateRevenue(){
+    const conv = Number(conversionInput.value) || 0
+    revenueInput.value = conv * selectedRevenueRate
+}
+
+channelSelect.onchange = () => {
+    inputDiv.style.display = channelSelect.value ? "block" : "none"
+}
+
+appSelect.onchange = () => {
+    const sel = appSelect.options[appSelect.selectedIndex]
+    selectedRevenueRate = Number(sel.dataset.revenue || 0)
+    calculateRevenue()
+}
+
+conversionInput.oninput = () => calculateRevenue()
+
+document.getElementById("addBtn").onclick = async () => {
+    const channelID = channelSelect.value
+    const appID = appSelect.value
+    const conversion = conversionInput.value
+    const clicks = document.getElementById("clicks").value
+    const revenue = Number(revenueInput.value)
+
+    if(!channelID || !appID || !conversion || !clicks){
+        Swal.fire("Fill all fields")
+        return
+    }
+
+    loader.style.display = "block"
+
+    await addDoc(collection(db,"data"),{
+        channel_id: channelID,
+        app_id: appID,
+        conversion: conversion,
+        click: clicks,
+        revenue: revenue,
+        credit_tomorrow: true,
+        credited: false,
+        timestamp: serverTimestamp()
+    })
+
+    loader.style.display = "none"
+    Swal.fire("Saved<br>Wallet will update tomorrow after 12 AM")
+
+    conversionInput.value = ""
+    document.getElementById("clicks").value = ""
+    appSelect.value = ""
+    revenueInput.value = ""
+}
+
+creditDaily()
+loadChannels()
+loadApps()
+</script>
+
+<script src="auth.js"></script>
+<script src="sidebar.js"></script>

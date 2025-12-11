@@ -1,0 +1,103 @@
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard</title>
+<link rel="stylesheet" href="style.css">
+
+<script type="module" src="./config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<div class="main-content">
+    <div class="container">
+        <div class="page-header">
+            <h1>Dashboard</h1>
+        </div>
+
+        <div class="filter-section">
+            <select id="channelSelect">
+                <option value="">Select Channel</option>
+            </select>
+            <input type="date" id="fromDate">
+            <input type="date" id="toDate">
+            <button id="filterBtn">Filter</button>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>App Name</th>
+                    <th>Clicks</th>
+                    <th>Revenue</th>
+                    <th>Conversion</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<script type="module">
+import { db } from "./config.js"
+import { collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js"
+
+const channelSelect = document.getElementById("channelSelect")
+const tableBody = document.getElementById("tableBody")
+
+async function loadChannels(){
+    const snap = await getDocs(collection(db,"channel"))
+    snap.forEach(d=>{
+        const op = document.createElement("option")
+        op.value = d.id
+        op.textContent = d.data().name
+        channelSelect.appendChild(op)
+    })
+}
+
+async function loadData(){
+    const channelID = channelSelect.value
+    if(!channelID) return
+
+    tableBody.innerHTML = ""
+
+    const snap = await getDocs(collection(db,"data"))
+    const appData = await getDocs(collection(db,"apps"))
+
+    const allApps = {}
+    appData.forEach(a => allApps[a.id] = a.data().title)
+
+    const from = document.getElementById("fromDate").value
+    const to = document.getElementById("toDate").value
+
+    snap.forEach(d=>{
+        const x = d.data()
+        if(x.channel_id !== channelID) return
+
+        if(from){
+            const ts = x.timestamp ? x.timestamp.seconds * 1000 : 0
+            const fd = new Date(from).getTime()
+            if(ts < fd) return
+        }
+
+        if(to){
+            const ts = x.timestamp ? x.timestamp.seconds * 1000 : 0
+            const td = new Date(to).getTime() + 86400000
+            if(ts > td) return
+        }
+
+        const tr = document.createElement("tr")
+        tr.innerHTML = `
+        <td>${allApps[x.app_id] || ""}</td>
+        <td>${x.click}</td>
+        <td>${x.revenue}</td>
+        <td>${x.conversion}</td>
+        `
+        tableBody.appendChild(tr)
+    })
+}
+
+channelSelect.onchange = loadData
+document.getElementById("filterBtn").onclick = loadData
+
+loadChannels()
+</script>
+<script src="auth.js"></script>
+<script src="sidebar.js"></script>

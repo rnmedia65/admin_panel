@@ -1,0 +1,105 @@
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Withdrawals</title>
+<link rel="stylesheet" href="style.css">
+<script type="module" src="./config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<div class="main-content">
+    <div class="container">
+        <div class="page-header">
+            <h1>Withdrawal Requests</h1>
+        </div>
+        <div id="cards" class="cards-grid"></div>
+    </div>
+</div>
+<script type="module">
+import { db } from "./config.js"
+import { collection, getDocs, doc, getDoc, updateDoc, increment } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js"
+const cards = document.getElementById("cards")
+async function getChannelName(uid){
+    const snap = await getDoc(doc(db,"channel",uid))
+    const d = snap.data()
+    return d ? d.name : uid
+}
+async function loadData(){
+    cards.innerHTML = ""
+    const snap = await getDocs(collection(db,"withdraw"))
+    for(const d of snap.docs){
+        const x = d.data()
+        if(x.status !== "Pending") continue
+        const channelName = await getChannelName(x.user_id)
+        const c = document.createElement("div")
+        c.className = "card"
+        let qrButton = ""
+        if(x.mode === "upi"){
+            qrButton = `<button class='qrBtn btn-secondary' data-upi='${x.upi}' data-amt='${x.amount}'>Show QR</button>`
+        }
+        c.innerHTML = `
+        <p><b>Channel:</b> ${channelName}</p>
+        <p><b>Mode:</b> ${x.mode}</p>
+        <p><b>Amount:</b> ${x.amount}</p>
+        ${x.mode === "upi" ? `<p><b>UPI:</b> ${x.upi}</p>` : ""}
+        ${x.mode === "bank" ? `
+        <p><b>Bank:</b> ${x.bankName}</p>
+        <p><b>Acc:</b> ${x.accNum}</p>
+        <p><b>IFSC:</b> ${x.ifsc}</p>` : ""}
+        <div>
+        ${qrButton}
+        <button class='acceptBtn btn-success' data-id='${d.id}'>Accept</button>
+        <button class='rejectBtn btn-danger' data-id='${d.id}' data-uid='${x.user_id}' data-amt='${x.amount}'>Reject</button>
+        </div>
+        `
+        cards.appendChild(c)
+    }
+    document.querySelectorAll(".qrBtn").forEach(btn=>{
+        btn.onclick = () => {
+            const upi = btn.dataset.upi
+            const amt = btn.dataset.amt
+            const upiUrl = `upi://pay?pa=${upi}&am=${amt}`
+            const qr = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(upiUrl)}`
+            Swal.fire({
+                title: "Scan QR",
+                imageUrl: qr,
+                imageWidth: 250,
+                imageHeight: 250
+            })
+        }
+    })
+    document.querySelectorAll(".acceptBtn").forEach(btn=>{
+        btn.onclick = () => {
+            Swal.fire({
+                title: "Do you really want to Accept?",
+                showCancelButton: true,
+                confirmButtonText: "Yes"
+            }).then(async res=>{
+                if(res.isConfirmed){
+                    await updateDoc(doc(db,"withdraw",btn.dataset.id),{ status:"Accept" })
+                    Swal.fire("Accepted")
+                    loadData()
+                }
+            })
+        }
+    })
+    document.querySelectorAll(".rejectBtn").forEach(btn=>{
+        btn.onclick = () => {
+            Swal.fire({
+                title: "Do you really want to Reject?",
+                showCancelButton: true,
+                confirmButtonText: "Yes"
+            }).then(async res=>{
+                if(res.isConfirmed){
+                    const uid = btn.dataset.uid
+                    const amt = parseFloat(btn.dataset.amt)
+                    await updateDoc(doc(db,"withdraw",btn.dataset.id),{ status:"Reject" })
+                    await updateDoc(doc(db,"channel",uid),{ balance: increment(amt) })
+                    Swal.fire("Rejected")
+                    loadData()
+                }
+            })
+        }
+    })
+}
+loadData()
+</script>
+<script src="auth.js"></script>
+<script src="sidebar.js"></script>
