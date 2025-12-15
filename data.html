@@ -3,7 +3,7 @@
 <title>Data Entry</title>
 <link rel="stylesheet" href="style.css">
 
-<script type="module" src="./config.js"></script>
+<script type="module" src="../config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <div class="main-content">
@@ -39,12 +39,30 @@
                 <button id="addBtn">Add Data</button>
             </div>
         </div>
+
+        <div id="dataTableSection" style="display:none;margin-top:30px;">
+            <h2 style="font-size:20px;margin-bottom:20px;">Channel Data Records</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>App Name</th>
+                        <th>Clicks</th>
+                        <th>Conversion</th>
+                        <th>Revenue</th>
+                        <th>Status</th>
+                        <th>Date</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="dataTableBody"></tbody>
+            </table>
+        </div>
     </div>
 </div>
 
 <script type="module">
-import { db } from "./config.js"
-import { collection, getDocs, addDoc, doc, getDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js"
+import { db } from "../config.js"
+import { collection, getDocs, addDoc, doc, getDoc, updateDoc, deleteDoc, serverTimestamp, query, where } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js"
 
 const loader = document.getElementById("loader")
 const channelSelect = document.getElementById("channelSelect")
@@ -52,8 +70,11 @@ const appSelect = document.getElementById("appSelect")
 const revenueInput = document.getElementById("revenue")
 const conversionInput = document.getElementById("conversion")
 const inputDiv = document.getElementById("inputDiv")
+const dataTableSection = document.getElementById("dataTableSection")
+const dataTableBody = document.getElementById("dataTableBody")
 
 let selectedRevenueRate = 0
+let allApps = {}
 
 async function creditDaily(){
     const today = new Date().toISOString().split("T")[0]
@@ -91,6 +112,7 @@ async function loadApps(){
     const snap = await getDocs(collection(db,"apps"))
     snap.forEach(d=>{
         const x = d.data()
+        allApps[d.id] = x.title
         const op = document.createElement("option")
         op.value = d.id
         op.textContent = x.title
@@ -100,13 +122,83 @@ async function loadApps(){
     loader.style.display = "none"
 }
 
+async function loadChannelData(channelID){
+    loader.style.display = "block"
+    dataTableBody.innerHTML = ""
+    
+    const snap = await getDocs(collection(db,"data"))
+    let hasData = false
+    
+    snap.forEach(d => {
+        const x = d.data()
+        if(x.channel_id !== channelID) return
+        
+        hasData = true
+        const tr = document.createElement("tr")
+        
+        const ts = x.timestamp ? new Date(x.timestamp.seconds * 1000) : null
+        const dateStr = ts ? ts.toISOString().split("T")[0] : "N/A"
+        
+        const statusText = x.credited ? "Credited" : "Pending"
+        const statusClass = x.credited ? "btn-success" : "btn-secondary"
+        
+        tr.innerHTML = `
+            <td>${allApps[x.app_id] || "N/A"}</td>
+            <td>${x.click}</td>
+            <td>${x.conversion}</td>
+            <td>₹${x.revenue}</td>
+            <td><button class="${statusClass}" style="padding:6px 12px;font-size:12px;cursor:default">${statusText}</button></td>
+            <td>${dateStr}</td>
+            <td><button class="btn-danger deleteBtn" data-id="${d.id}">Delete</button></td>
+        `
+        
+        dataTableBody.appendChild(tr)
+    })
+    
+    dataTableSection.style.display = hasData ? "block" : "none"
+    
+    document.querySelectorAll(".deleteBtn").forEach(btn => {
+        btn.onclick = async () => {
+            const result = await Swal.fire({
+                title: 'Delete Record?',
+                text: 'This action cannot be undone',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Yes, Delete',
+                cancelButtonText: 'Cancel',
+                confirmButtonColor: '#f44336'
+            })
+            
+            if(result.isConfirmed){
+                loader.style.display = "block"
+                await deleteDoc(doc(db, "data", btn.dataset.id))
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Deleted',
+                    timer: 1500,
+                    showConfirmButton: false
+                })
+                loadChannelData(channelSelect.value)
+            }
+        }
+    })
+    
+    loader.style.display = "none"
+}
+
 function calculateRevenue(){
     const conv = Number(conversionInput.value) || 0
     revenueInput.value = conv * selectedRevenueRate
 }
 
 channelSelect.onchange = () => {
-    inputDiv.style.display = channelSelect.value ? "block" : "none"
+    const channelID = channelSelect.value
+    inputDiv.style.display = channelID ? "block" : "none"
+    if(channelID){
+        loadChannelData(channelID)
+    } else {
+        dataTableSection.style.display = "none"
+    }
 }
 
 appSelect.onchange = () => {
@@ -149,6 +241,8 @@ document.getElementById("addBtn").onclick = async () => {
     document.getElementById("clicks").value = ""
     appSelect.value = ""
     revenueInput.value = ""
+    
+    loadChannelData(channelID)
 }
 
 creditDaily()
