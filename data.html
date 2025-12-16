@@ -62,7 +62,7 @@
 
 <script type="module">
 import { db } from "../config.js"
-import { collection, getDocs, addDoc, doc, getDoc, updateDoc, deleteDoc, serverTimestamp, query, where } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js"
+import { collection, getDocs, addDoc, doc, getDoc, updateDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js"
 
 const loader = document.getElementById("loader")
 const channelSelect = document.getElementById("channelSelect")
@@ -77,20 +77,32 @@ let selectedRevenueRate = 0
 let allApps = {}
 
 async function creditDaily(){
-    const today = new Date().toISOString().split("T")[0]
     const snap = await getDocs(collection(db,"data"))
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    
     for(const d of snap.docs){
         const x = d.data()
-        if(!x.credit_tomorrow) continue
         if(x.credited) continue
-        const ts = new Date(x.timestamp.seconds * 1000)
-        const dataDate = ts.toISOString().split("T")[0]
-        if(dataDate === today) continue
-        const ref = doc(db,"channel",x.channel_id)
-        const c = await getDoc(ref)
-        const bal = Number(c.data().balance || 0)
-        await updateDoc(ref,{ balance: bal + Number(x.revenue) })
-        await updateDoc(doc(db,"data",d.id),{ credited:true })
+        
+        if(!x.timestamp) continue
+        
+        const dataDate = new Date(x.timestamp.seconds * 1000)
+        dataDate.setHours(0, 0, 0, 0)
+        
+        if(dataDate >= today) continue
+        
+        try {
+            const ref = doc(db,"channel",x.channel_id)
+            const c = await getDoc(ref)
+            if(c.exists()){
+                const bal = Number(c.data().balance || 0)
+                await updateDoc(ref,{ balance: bal + Number(x.revenue) })
+                await updateDoc(doc(db,"data",d.id),{ credited:true })
+            }
+        } catch(err) {
+            console.error("Credit error:", err)
+        }
     }
 }
 
@@ -149,7 +161,7 @@ async function loadChannelData(channelID){
             <td>₹${x.revenue}</td>
             <td><button class="${statusClass}" style="padding:6px 12px;font-size:12px;cursor:default">${statusText}</button></td>
             <td>${dateStr}</td>
-            <td><button class="btn-danger deleteBtn" data-id="${d.id}">Delete</button></td>
+            <td><button class="btn-danger deleteBtn" data-id="${d.id}" data-revenue="${x.revenue}" data-credited="${x.credited}">Delete</button></td>
         `
         
         dataTableBody.appendChild(tr)
@@ -171,7 +183,21 @@ async function loadChannelData(channelID){
             
             if(result.isConfirmed){
                 loader.style.display = "block"
+                
+                const isCredited = btn.dataset.credited === "true"
+                const revenue = Number(btn.dataset.revenue || 0)
+                
+                if(isCredited && revenue > 0){
+                    const ref = doc(db,"channel",channelSelect.value)
+                    const c = await getDoc(ref)
+                    if(c.exists()){
+                        const bal = Number(c.data().balance || 0)
+                        await updateDoc(ref,{ balance: bal - revenue })
+                    }
+                }
+                
                 await deleteDoc(doc(db, "data", btn.dataset.id))
+                
                 Swal.fire({
                     icon: 'success',
                     title: 'Deleted',
@@ -223,26 +249,30 @@ document.getElementById("addBtn").onclick = async () => {
 
     loader.style.display = "block"
 
-    await addDoc(collection(db,"data"),{
-        channel_id: channelID,
-        app_id: appID,
-        conversion: conversion,
-        click: clicks,
-        revenue: revenue,
-        credit_tomorrow: true,
-        credited: false,
-        timestamp: serverTimestamp()
-    })
+    try {
+        await addDoc(collection(db,"data"),{
+            channel_id: channelID,
+            app_id: appID,
+            conversion: conversion,
+            click: clicks,
+            revenue: revenue,
+            credited: false,
+            timestamp: serverTimestamp()
+        })
 
-    loader.style.display = "none"
-    Swal.fire("Saved<br>Wallet will update tomorrow after 12 AM")
+        loader.style.display = "none"
+        Swal.fire("Saved<br>Wallet will update tomorrow")
 
-    conversionInput.value = ""
-    document.getElementById("clicks").value = ""
-    appSelect.value = ""
-    revenueInput.value = ""
-    
-    loadChannelData(channelID)
+        conversionInput.value = ""
+        document.getElementById("clicks").value = ""
+        appSelect.value = ""
+        revenueInput.value = ""
+        
+        loadChannelData(channelID)
+    } catch(err) {
+        loader.style.display = "none"
+        Swal.fire("Error", "Failed to save data", "error")
+    }
 }
 
 creditDaily()
