@@ -1,0 +1,250 @@
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Offer Links</title>
+<link rel="stylesheet" href="style.css">
+
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script type="module" src="./config.js"></script>
+
+<style>
+.video-preview {
+    margin-top: 24px;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid #e0e0e0;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.video-preview iframe {
+    width: 100%;
+    height: 340px;
+    display: block;
+    border: none;
+}
+.video-label {
+    background: #f8f9fa;
+    padding: 10px 16px;
+    font-size: 13px;
+    color: #666;
+    border-top: 1px solid #e0e0e0;
+}
+.checkbox-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 0;
+}
+.checkbox-group input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: #2196F3;
+    cursor: pointer;
+}
+.checkbox-group label {
+    font-size: 14px;
+    color: #333;
+    cursor: pointer;
+    user-select: none;
+}
+</style>
+
+<div class="main-content">
+    <div class="container">
+        <div class="page-header">
+            <h1>Offer Links</h1>
+        </div>
+
+        <div class="card" style="max-width:600px;">
+            <div class="form-group">
+                <select id="channelSelect">
+                    <option value="">Select Channel</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <select id="appSelect">
+                    <option value="">Select App</option>
+                </select>
+            </div>
+
+            <div id="formFields" style="display:none;">
+                <div class="form-group">
+                    <input id="urlInput" type="text" placeholder="Enter Offer URL">
+                </div>
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="isVideo">
+                    <label for="isVideo">Is this a YouTube Video URL?</label>
+                </div>
+                <div id="btnRow" style="margin-top:20px;">
+                    <button id="saveBtn">Add Link</button>
+                </div>
+            </div>
+
+            <div id="noSelectMsg" style="color:#999;font-size:14px;padding:10px 0;">
+                Please select both channel and app to continue.
+            </div>
+        </div>
+
+        <div id="videoPreviewWrapper" style="display:none;max-width:600px;margin-top:10px;">
+            <div class="video-preview">
+                <iframe id="videoFrame" src="" allowfullscreen></iframe>
+                <div class="video-label">YouTube Video Preview</div>
+            </div>
+        </div>
+
+        <div id="loader"></div>
+    </div>
+</div>
+
+<script type="module">
+import { db } from "./config.js"
+import { collection, getDocs, addDoc, query, where, updateDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js"
+
+const channelSelect = document.getElementById("channelSelect")
+const appSelect = document.getElementById("appSelect")
+const formFields = document.getElementById("formFields")
+const noSelectMsg = document.getElementById("noSelectMsg")
+const urlInput = document.getElementById("urlInput")
+const isVideo = document.getElementById("isVideo")
+const saveBtn = document.getElementById("saveBtn")
+const loader = document.getElementById("loader")
+const videoPreviewWrapper = document.getElementById("videoPreviewWrapper")
+const videoFrame = document.getElementById("videoFrame")
+
+let existingDocId = null
+
+async function loadChannels() {
+    const snap = await getDocs(collection(db, "channel"))
+    snap.forEach(d => {
+        const op = document.createElement("option")
+        op.value = d.id
+        op.textContent = d.data().name
+        channelSelect.appendChild(op)
+    })
+}
+
+async function loadApps() {
+    const snap = await getDocs(collection(db, "apps"))
+    snap.forEach(d => {
+        const op = document.createElement("option")
+        op.value = d.id
+        op.textContent = d.data().title
+        appSelect.appendChild(op)
+    })
+}
+
+function extractYouTubeId(url) {
+    const patterns = [
+        /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
+        /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/
+    ]
+    for (const p of patterns) {
+        const m = url.match(p)
+        if (m) return m[1]
+    }
+    return null
+}
+
+function updateVideoPreview() {
+    if (isVideo.checked && urlInput.value.trim()) {
+        const vid = extractYouTubeId(urlInput.value.trim())
+        if (vid) {
+            videoFrame.src = `https://www.youtube.com/embed/${vid}`
+            videoPreviewWrapper.style.display = "block"
+            return
+        }
+    }
+    videoPreviewWrapper.style.display = "none"
+    videoFrame.src = ""
+}
+
+async function checkExisting() {
+    const channelID = channelSelect.value
+    const appID = appSelect.value
+
+    if (!channelID || !appID) {
+        formFields.style.display = "none"
+        noSelectMsg.style.display = "block"
+        videoPreviewWrapper.style.display = "none"
+        existingDocId = null
+        return
+    }
+
+    noSelectMsg.style.display = "none"
+    loader.style.display = "block"
+
+    const q = query(
+        collection(db, "offer_links"),
+        where("channel_id", "==", channelID),
+        where("app_id", "==", appID)
+    )
+    const snap = await getDocs(q)
+
+    if (!snap.empty) {
+        const d = snap.docs[0]
+        existingDocId = d.id
+        const x = d.data()
+        urlInput.value = x.url || ""
+        isVideo.checked = x.is_video === true
+        saveBtn.textContent = "Update Link"
+    } else {
+        existingDocId = null
+        urlInput.value = ""
+        isVideo.checked = false
+        saveBtn.textContent = "Add Link"
+    }
+
+    formFields.style.display = "block"
+    loader.style.display = "none"
+    updateVideoPreview()
+}
+
+channelSelect.onchange = checkExisting
+appSelect.onchange = checkExisting
+
+urlInput.oninput = updateVideoPreview
+isVideo.onchange = updateVideoPreview
+
+saveBtn.onclick = async () => {
+    const channelID = channelSelect.value
+    const appID = appSelect.value
+    const url = urlInput.value.trim()
+
+    if (!channelID || !appID) {
+        Swal.fire("Please select channel and app")
+        return
+    }
+    if (!url) {
+        Swal.fire("Please enter a URL")
+        return
+    }
+
+    loader.style.display = "block"
+
+    const payload = {
+        channel_id: channelID,
+        app_id: appID,
+        url: url,
+        is_video: isVideo.checked
+    }
+
+    if (existingDocId) {
+        await updateDoc(doc(db, "offer_links", existingDocId), payload)
+        loader.style.display = "none"
+        Swal.fire("Updated", "Offer link updated successfully", "success")
+    } else {
+        await addDoc(collection(db, "offer_links"), payload)
+        loader.style.display = "none"
+        Swal.fire("Added", "Offer link added successfully", "success")
+        existingDocId = null
+        await checkExisting()
+    }
+}
+
+loadChannels()
+loadApps()
+noSelectMsg.style.display = "block"
+formFields.style.display = "none"
+</script>
+
+<script src="auth.js"></script>
+<script src="sidebar.js"></script>
