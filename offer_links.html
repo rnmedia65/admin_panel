@@ -45,6 +45,26 @@
     cursor: pointer;
     user-select: none;
 }
+.saved-video-box {
+    margin-top: 16px;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid #e0e0e0;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+.saved-video-box iframe {
+    width: 100%;
+    height: 280px;
+    display: block;
+    border: none;
+}
+.saved-video-label {
+    background: #f8f9fa;
+    padding: 8px 14px;
+    font-size: 12px;
+    color: #888;
+    border-top: 1px solid #e0e0e0;
+}
 </style>
 
 <div class="main-content">
@@ -53,7 +73,7 @@
             <h1>Offer Links</h1>
         </div>
 
-        <div class="card">
+        <div class="card" style="max-width:600px;">
             <div class="form-group">
                 <select id="channelSelect">
                     <option value="">Select Channel</option>
@@ -77,9 +97,15 @@
                 <div style="margin-top:20px;">
                     <button id="saveBtn">Add Link</button>
                 </div>
+                <div id="savedVideoBox" style="display:none;">
+                    <div class="saved-video-box">
+                        <iframe id="savedVideoFrame" src="" allowfullscreen></iframe>
+                        <div class="saved-video-label">Channel's saved YouTube video</div>
+                    </div>
+                </div>
             </div>
 
-            <div id="noSelectMsg" style="color:#999;font-size:14px;padding:10px 0;" style="display:none;">
+            <div id="noSelectMsg" style="color:#999;font-size:14px;padding:10px 0;">
                 Please select both channel and app to continue.
             </div>
         </div>
@@ -134,6 +160,18 @@ function updateVideoPreview() {
     frame.src = ""
 }
 
+function showSavedVideo(videoId) {
+    const box = el("savedVideoBox")
+    const frame = el("savedVideoFrame")
+    if (videoId) {
+        frame.src = `https://www.youtube.com/embed/${videoId}`
+        box.style.display = "block"
+    } else {
+        frame.src = ""
+        box.style.display = "none"
+    }
+}
+
 async function checkExisting() {
     const channelID = el("channelSelect").value
     const appID = el("appSelect").value
@@ -143,6 +181,8 @@ async function checkExisting() {
         el("noSelectMsg").style.display = "block"
         el("videoPreviewWrapper").style.display = "none"
         el("videoFrame").src = ""
+        el("savedVideoBox").style.display = "none"
+        el("savedVideoFrame").src = ""
         existingDocId = null
         return
     }
@@ -164,11 +204,13 @@ async function checkExisting() {
         el("urlInput").value = x.url || ""
         el("isVideo").checked = x.is_video === true
         el("saveBtn").textContent = "Update Link"
+        showSavedVideo(x.video_id || "")
     } else {
         existingDocId = null
         el("urlInput").value = ""
         el("isVideo").checked = false
         el("saveBtn").textContent = "Add Link"
+        showSavedVideo("")
     }
 
     el("formFields").style.display = "block"
