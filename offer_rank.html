@@ -109,7 +109,7 @@
 
 <script type="module">
 import { db } from "./config.js"
-import { collection, getDocs, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js"
+import { collection, getDocs, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js"
 
 function el(id) { return document.getElementById(id) }
 
@@ -141,7 +141,10 @@ async function loadData() {
     Object.values(allAppsMap).forEach(app => {
         const r = rankMap[app.id]
         if (r && r.disabled === true) {
-            disabledApps.push({ ...app })
+            disabledApps.push({
+                ...app,
+                price: r.price || ""
+            })
         } else {
             activeApps.push({
                 ...app,
@@ -233,8 +236,13 @@ function renderActive() {
                 confirmButtonText: "Yes, Disable",
                 cancelButtonText: "Cancel",
                 confirmButtonColor: "#f44336"
-            }).then(r => {
+            }).then(async r => {
                 if (r.isConfirmed) {
+                    await setDoc(doc(db, "offer_rank", app.id), {
+                        rank: 9999,
+                        price: app.price || "",
+                        disabled: true
+                    })
                     disabledApps.push({ ...app })
                     activeApps.splice(idx, 1)
                     activeApps.forEach((a, i) => { a.rank = i + 1 })
@@ -294,9 +302,14 @@ function renderDisabled() {
                 confirmButtonText: "Yes, Enable",
                 cancelButtonText: "Cancel",
                 confirmButtonColor: "#4CAF50"
-            }).then(r => {
+            }).then(async r => {
                 if (r.isConfirmed) {
                     const restored = { ...app, rank: activeApps.length + 1, price: app.price || "" }
+                    await setDoc(doc(db, "offer_rank", app.id), {
+                        rank: restored.rank,
+                        price: restored.price,
+                        disabled: false
+                    })
                     activeApps.push(restored)
                     activeApps.forEach((a, i) => { a.rank = i + 1 })
                     disabledApps.splice(idx, 1)
