@@ -1,0 +1,353 @@
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Offer Rank</title>
+<link rel="stylesheet" href="style.css">
+
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script type="module" src="./config.js"></script>
+
+<style>
+.rank-input {
+    width: 70px;
+    padding: 6px 10px;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    font-size: 13px;
+    text-align: center;
+}
+.rank-input:focus {
+    outline: none;
+    border-color: #2196F3;
+    box-shadow: 0 0 0 2px rgba(33,150,243,0.1);
+}
+.move-btns {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.move-btn {
+    padding: 3px 8px;
+    font-size: 11px;
+    line-height: 1;
+    background: #f0f0f0;
+    color: #333;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.move-btn:hover {
+    background: #2196F3;
+    color: #fff;
+    border-color: #2196F3;
+    transform: none;
+    box-shadow: none;
+}
+.app-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.app-info img {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    object-fit: cover;
+}
+.section-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #1a1a1a;
+    margin: 30px 0 14px;
+}
+.update-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+</style>
+
+<div class="main-content">
+    <div class="container">
+        <div class="page-header">
+            <h1>Offer Rank</h1>
+        </div>
+
+        <div id="loader"></div>
+
+        <div class="update-bar">
+            <button id="updateBtn">Update Ranks</button>
+        </div>
+
+        <div class="section-title">Active Apps</div>
+        <table id="activeTable">
+            <thead>
+                <tr>
+                    <th>Rank</th>
+                    <th>App</th>
+                    <th>Price</th>
+                    <th>Move</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="activeBody"></tbody>
+        </table>
+
+        <div class="section-title">Disabled Apps</div>
+        <table id="disabledTable">
+            <thead>
+                <tr>
+                    <th>App</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="disabledBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<script type="module">
+import { db } from "./config.js"
+import { collection, getDocs, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js"
+
+function el(id) { return document.getElementById(id) }
+
+let activeApps = []
+let disabledApps = []
+let allAppsMap = {}
+
+async function loadData() {
+    el("loader").style.display = "block"
+    el("activeBody").innerHTML = ""
+    el("disabledBody").innerHTML = ""
+
+    const appsSnap = await getDocs(collection(db, "apps"))
+    const rankSnap = await getDocs(collection(db, "offer_rank"))
+
+    allAppsMap = {}
+    appsSnap.forEach(d => {
+        allAppsMap[d.id] = { id: d.id, ...d.data() }
+    })
+
+    const rankMap = {}
+    rankSnap.forEach(d => {
+        rankMap[d.id] = d.data()
+    })
+
+    activeApps = []
+    disabledApps = []
+
+    Object.values(allAppsMap).forEach(app => {
+        const r = rankMap[app.id]
+        if (r && r.disabled === true) {
+            disabledApps.push({ ...app })
+        } else {
+            activeApps.push({
+                ...app,
+                rank: r ? Number(r.rank) : 9999,
+                price: r ? (r.price || "") : ""
+            })
+        }
+    })
+
+    activeApps.sort((a, b) => a.rank - b.rank)
+    activeApps.forEach((app, i) => { app.rank = i + 1 })
+
+    renderActive()
+    renderDisabled()
+    el("loader").style.display = "none"
+}
+
+function renderActive() {
+    const tbody = el("activeBody")
+    tbody.innerHTML = ""
+    activeApps.forEach((app, idx) => {
+        const tr = document.createElement("tr")
+        tr.dataset.idx = idx
+        tr.innerHTML = `
+            <td>
+                <input class="rank-input" type="number" min="1" value="${app.rank}" data-idx="${idx}">
+            </td>
+            <td>
+                <div class="app-info">
+                    <img src="${app.image}" alt="${app.title}">
+                    <span>${app.title}</span>
+                </div>
+            </td>
+            <td>
+                <input class="rank-input" type="number" min="0" placeholder="Price" style="width:90px;" value="${app.price || ""}" data-price-idx="${idx}">
+            </td>
+            <td>
+                <div class="move-btns">
+                    <button class="move-btn" data-dir="up" data-idx="${idx}">▲</button>
+                    <button class="move-btn" data-dir="down" data-idx="${idx}">▼</button>
+                </div>
+            </td>
+            <td>
+                <button class="btn-danger disable-btn" data-idx="${idx}" style="padding:8px 14px;font-size:12px;">Disable</button>
+            </td>
+        `
+        tbody.appendChild(tr)
+    })
+
+    tbody.querySelectorAll(".rank-input[data-idx]").forEach(input => {
+        input.addEventListener("change", () => {
+            const idx = Number(input.dataset.idx)
+            const newRank = Number(input.value)
+            if (!newRank || newRank < 1) return
+            reorderByRankInput(idx, newRank)
+        })
+    })
+
+    tbody.querySelectorAll("input[data-price-idx]").forEach(input => {
+        input.addEventListener("input", () => {
+            const idx = Number(input.dataset.priceIdx)
+            activeApps[idx].price = input.value
+        })
+    })
+
+    tbody.querySelectorAll(".move-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const idx = Number(btn.dataset.idx)
+            const dir = btn.dataset.dir
+            if (dir === "up" && idx > 0) {
+                [activeApps[idx - 1], activeApps[idx]] = [activeApps[idx], activeApps[idx - 1]]
+            } else if (dir === "down" && idx < activeApps.length - 1) {
+                [activeApps[idx], activeApps[idx + 1]] = [activeApps[idx + 1], activeApps[idx]]
+            }
+            activeApps.forEach((a, i) => { a.rank = i + 1 })
+            renderActive()
+        })
+    })
+
+    tbody.querySelectorAll(".disable-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const idx = Number(btn.dataset.idx)
+            const app = activeApps[idx]
+            Swal.fire({
+                title: "Disable App?",
+                html: `Disable <b>${app.title}</b> from offer rank?`,
+                icon: "warning",
+                showCancelButton: true,
+                confirmButtonText: "Yes, Disable",
+                cancelButtonText: "Cancel",
+                confirmButtonColor: "#f44336"
+            }).then(r => {
+                if (r.isConfirmed) {
+                    disabledApps.push({ ...app })
+                    activeApps.splice(idx, 1)
+                    activeApps.forEach((a, i) => { a.rank = i + 1 })
+                    renderActive()
+                    renderDisabled()
+                    Swal.fire({ icon: "success", title: "Disabled", timer: 1200, showConfirmButton: false })
+                }
+            })
+        })
+    })
+}
+
+function reorderByRankInput(idx, newRank) {
+    const clamped = Math.max(1, Math.min(newRank, activeApps.length))
+    const item = activeApps.splice(idx, 1)[0]
+    activeApps.splice(clamped - 1, 0, item)
+    activeApps.forEach((a, i) => { a.rank = i + 1 })
+    renderActive()
+}
+
+function renderDisabled() {
+    const tbody = el("disabledBody")
+    tbody.innerHTML = ""
+
+    if (disabledApps.length === 0) {
+        const tr = document.createElement("tr")
+        tr.innerHTML = `<td colspan="2" style="text-align:center;color:#999;padding:20px;">No disabled apps</td>`
+        tbody.appendChild(tr)
+        return
+    }
+
+    disabledApps.forEach((app, idx) => {
+        const tr = document.createElement("tr")
+        tr.innerHTML = `
+            <td>
+                <div class="app-info">
+                    <img src="${app.image}" alt="${app.title}">
+                    <span>${app.title}</span>
+                </div>
+            </td>
+            <td>
+                <button class="btn-success enable-btn" data-idx="${idx}" style="padding:8px 14px;font-size:12px;">Enable</button>
+            </td>
+        `
+        tbody.appendChild(tr)
+    })
+
+    tbody.querySelectorAll(".enable-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const idx = Number(btn.dataset.idx)
+            const app = disabledApps[idx]
+            Swal.fire({
+                title: "Enable App?",
+                html: `Enable <b>${app.title}</b> back in offer rank?`,
+                icon: "question",
+                showCancelButton: true,
+                confirmButtonText: "Yes, Enable",
+                cancelButtonText: "Cancel",
+                confirmButtonColor: "#4CAF50"
+            }).then(r => {
+                if (r.isConfirmed) {
+                    const restored = { ...app, rank: activeApps.length + 1, price: app.price || "" }
+                    activeApps.push(restored)
+                    activeApps.forEach((a, i) => { a.rank = i + 1 })
+                    disabledApps.splice(idx, 1)
+                    renderActive()
+                    renderDisabled()
+                    Swal.fire({ icon: "success", title: "Enabled", timer: 1200, showConfirmButton: false })
+                }
+            })
+        })
+    })
+}
+
+el("updateBtn").addEventListener("click", async () => {
+    const result = await Swal.fire({
+        title: "Update Ranks?",
+        text: "Save current rank order and prices to database?",
+        icon: "question",
+        showCancelButton: true,
+        confirmButtonText: "Yes, Update",
+        cancelButtonText: "Cancel"
+    })
+
+    if (!result.isConfirmed) return
+
+    el("loader").style.display = "block"
+
+    try {
+        for (const app of activeApps) {
+            await setDoc(doc(db, "offer_rank", app.id), {
+                rank: app.rank,
+                price: app.price || "",
+                disabled: false
+            })
+        }
+        for (const app of disabledApps) {
+            await setDoc(doc(db, "offer_rank", app.id), {
+                rank: 9999,
+                price: app.price || "",
+                disabled: true
+            })
+        }
+        el("loader").style.display = "none"
+        Swal.fire({ icon: "success", title: "Updated", text: "Ranks saved successfully", timer: 1800, showConfirmButton: false })
+    } catch (err) {
+        el("loader").style.display = "none"
+        Swal.fire({ icon: "error", title: "Error", text: "Failed to save ranks" })
+    }
+})
+
+loadData()
+</script>
+
+<script src="auth.js"></script>
+<script src="sidebar.js"></script>
